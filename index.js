@@ -1,65 +1,85 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
-const robot = require("robotjs");
 const os = require("os");
 const readline = require("readline");
 const path = require("path");
 const fs = require("fs");
-const util = require("util");
-const { execPath } = process;
+const dotenv = require('dotenv')
+const User = require('./models/User.js')
+const mongoose = require('mongoose')
+dotenv.config();
 
 const isPkg = typeof process.pkg !== "undefined";
+
+// === Nut.js setup (works inside pkg) ===
+function prepareNutBindings() {
+  try {
+    const osTmp = os.tmpdir();
+    const destDir = path.join(osTmp, "nutjs");
+    const destPath = path.join(destDir, "libnut.node");
+
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+
+    const srcPath = isPkg
+      ? path.join(path.dirname(process.execPath), "node_modules/@nut-tree/libnut-win32/build/Release/libnut.node")
+      : path.join(__dirname, "node_modules/@nut-tree/libnut-win32/build/Release/libnut.node");
+
+    if (fs.existsSync(srcPath)) fs.copyFileSync(srcPath, destPath);
+    process.env.LIBNUT_PATH = destPath;
+  } catch (e) {
+    console.error("❌ Nut bindings preparation error:", e);
+  }
+}
+prepareNutBindings();
+
+const { mouse, Button, keyboard, Key } = require("@nut-tree/nut-js");
+mouse.config.mouseSpeed = 1500;
+
+// === Express setup ===
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// ---------- Helper: copy embedded asset to real tmp dir ----------
-function ensureDirSync(dir) {
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+// === Asset copying ===
+function ensureDir(p) {
+  if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
-function copyAssetToTemp(relPath, destRoot) {
-  const src = path.join(__dirname, relPath);
-  const dest = path.join(destRoot, relPath);
-
-  ensureDirSync(path.dirname(dest));
-
-  try {
-    const data = fs.readFileSync(src);
-    fs.writeFileSync(dest, data);
-  } catch (err) {
-    console.error("Failed to copy asset", relPath, err.message);
-  }
-}
-
-let servedRoot = null;
+let servedRoot;
 if (isPkg) {
-  const tmpRoot = path.join(os.tmpdir(), "mymouse-assets-" + (process.pid || "0"));
+  // console.log("📦 Running in PKG mode, extracting assets...");
+  const tmpRoot = path.join(os.tmpdir(), `mymouse-assets-${process.pid}`);
   servedRoot = tmpRoot;
+  ensureDir(tmpRoot);
 
-  const assetsToCopy = [
-    "index.html",
-    "public/style.css",
-    "public/script.js",
-    path.join("node_modules", "socket.io", "client-dist", "socket.io.js")
+  // Assets to extract - use direct paths in snapshot
+  const assets = [
+   { file: "index.html", snapshotPath: "index.html" },
+  { file: "public/style.css", snapshotPath: "public/style.css" },
+  { file: "public/script.js", snapshotPath: "public/script.js" },
+  { file: "node_modules/socket.io/client-dist/socket.io.js", snapshotPath: "node_modules/socket.io/client-dist/socket.io.js" }
   ];
 
-  ensureDirSync(tmpRoot);
-
-  assetsToCopy.forEach((rel) => {
-    const relNormalized = rel.split(path.posix.sep).join(path.sep);
-    copyAssetToTemp(relNormalized, tmpRoot);
-  });
+  for (const asset of assets) {
+    const dest = path.join(tmpRoot, asset.file);
+    ensureDir(path.dirname(dest));
+    
+    try {
+      // Use path relative to __dirname for snapshot access
+      const snapshotPath = path.join(__dirname, asset.snapshotPath);
+      const content = fs.readFileSync(snapshotPath);
+      fs.writeFileSync(dest, content);
+      // console.log(`✅ Copied: ${asset.file}`);
+    } catch (e) {
+      console.warn(`⚠️ Failed to copy ${asset.file}: ${e.message}`);
+      console.warn(`   Tried: ${asset.snapshotPath}`);
+    }
+  }
 
   app.use("/public", express.static(path.join(servedRoot, "public")));
   app.use("/socket.io", express.static(path.join(servedRoot, "node_modules", "socket.io", "client-dist")));
-  
-  app.get("/", (req, res) => {
-    res.sendFile(path.join(servedRoot, "index.html"));
-  });
-
-  // console.log("⚙️ Running inside pkg - assets copied to:", servedRoot);
+  app.get("/", (req, res) => res.sendFile(path.join(servedRoot, "index.html")));
 } else {
   const baseDir = __dirname;
   app.use("/public", express.static(path.join(baseDir, "public")));
@@ -67,7 +87,7 @@ if (isPkg) {
   app.get("/", (req, res) => res.sendFile(path.join(baseDir, "index.html")));
 }
 
-
+// === IP route ===
 app.get("/__ip__", (req, res) => {
   const nets = os.networkInterfaces();
   let ip = "127.0.0.1";
@@ -79,46 +99,108 @@ app.get("/__ip__", (req, res) => {
   res.send(ip);
 });
 
-// === socket ===
+// === Socket events ===
 io.on("connection", (socket) => {
-  console.log("✅ Client connected:", socket.id);
+  console.log("✅ Telefon muvaffaqiyatli ulandi!");
 
-  socket.on("move", ({ dx, dy }) => {
-    const mouse = robot.getMousePos();
-    const speed = 2.5;
-    robot.moveMouse(mouse.x + dx * speed, mouse.y + dy * speed);
-  });
-
-  socket.on("scroll", ({ dy }) => {
-    const scrollSpeed = 2;
-    robot.scrollMouse(0, Math.round(dy * scrollSpeed));
-  });
-
-  socket.on("click", (btn) => {
-    robot.mouseClick(btn);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("❌ Client disconnected:", socket.id);
-  });
-});
-
-const PORT = 3000;
-server.listen(PORT, "0.0.0.0", () => {
-  const nets = os.networkInterfaces();
-  const ips = [];
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
-      if (net.family === "IPv4" && !net.internal) ips.push(net.address);
+  socket.on("move", async ({ dx, dy }) => {
+    try {
+      const pos = await mouse.getPosition();
+      const speed = 3;
+      await mouse.setPosition({ x: pos.x + dx * speed, y: pos.y + dy * speed });
+    } catch (e) {
+      console.error("Move error:", e);
     }
-  }
-  console.log("\n🌐 Server running on:");
-  ips.forEach((ip) => console.log(`  👉 http://${ip}:${PORT}`));
-  console.log("\n📱 Telefoningizdagi brauzerda shu manzillardan birini oching.");
-  console.log("\n ------------------------------------------------- \n DIQQAT: Kompyuteringiz va Telefoningiz bir xil \n  Wi-Figa ulanganligiga ishonch hosil qiling! \n ------------------------------------------------- ")
-  console.log("\n O'chirish uchun ENTER tugmasini bosing...");
-  console.log("\n --------------- \n dev: -offcodev- \n ---------------");
+  });
 
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  rl.on("line", () => process.exit(0));
+  socket.on("scroll", async ({ dy }) => {
+    try {
+      if (dy > 0) await mouse.scrollDown(Math.abs(dy));
+      else if (dy < 0) await mouse.scrollUp(Math.abs(dy));
+    } catch (e) {
+      console.error("Scroll error:", e);
+    }
+  });
+
+  socket.on("click", async (btn) => {
+    try {
+      if (btn === "left") await mouse.click(Button.LEFT);
+      else if (btn === "right") await mouse.click(Button.RIGHT);
+    } catch (e) {
+      console.error("Click error:", e);
+    }
+  });
+  
+socket.on("altTabStart", async () => {
+    try {
+      await keyboard.pressKey(Key.LeftAlt);
+      await keyboard.pressKey(Key.Tab);
+      await keyboard.releaseKey(Key.Tab);
+      // console.log("✅ ALT pressed - Window switcher opened");
+    } catch (e) {
+      console.error("ALT+TAB Start error:", e);
+    }
+  });
+
+  socket.on("altTabNavigate", async ({ direction }) => {
+    try {
+      if (direction === "next") {
+        await keyboard.pressKey(Key.Tab);
+        await keyboard.releaseKey(Key.Tab);
+      } else if (direction === "prev") {
+        await keyboard.pressKey(Key.LeftShift);
+        await keyboard.pressKey(Key.Tab);
+        await keyboard.releaseKey(Key.Tab);
+        await keyboard.releaseKey(Key.LeftShift);
+      }
+      
+    } catch (e) {
+      console.error("ALT+TAB Navigate error:", e);
+    }
+  });
+
+  socket.on("altTabEnd", async () => {
+    try {
+      await keyboard.releaseKey(Key.LeftAlt);
+    } catch (e) {
+      console.error("ALT+TAB End error:", e);
+    }
+  });
+  
+  socket.on("disconnect", () => console.log("❌ Telefon uzildi!"));
 });
+
+// Run Server
+const startApp = async () => { 
+  try { 
+    // server listen
+    const PORT = 3000;
+    server.listen(PORT, "0.0.0.0", () => {
+      const nets = os.networkInterfaces();
+      const ips = [];
+      for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+          if (net.family === "IPv4" && !net.internal) ips.push(net.address);
+        }
+      }
+      console.log("\n🌐 MyMouse ishga tushirildi...");
+      console.log("\n📱 Telefoningizdagi brauzer(Chrome) orqali shu manzillardan birini oching: ");
+      ips.forEach((ip) => console.log(`   👉 http://${ip}:${PORT}`));
+      console.log("\n 1. Telefoningizda Chrome ilovasini oching. \n 2. Qidiruv tizimiga tepada ko'rsatilgan IP adressni kiriting. \n 3. Ekranda chiqqan sichqonchaning Touchpad qismiga teginish orqali harakatlantiring.");
+      console.log("\n 🎯 Funksiyalar:");
+      console.log("   • 1 barmoq = Sichqonchani harakatlantirish");
+      console.log("   • 2 barmoq yuqoriga/pastga = Scroll");
+      console.log("   • 3 barmoq o'ngga/chapga = Switch Windows");
+      console.log("\n ------------------------------------------------- \n DIQQAT: Kompyuteringiz va Telefoningiz bir xil \n  Wi-Figa ulanganligiga ishonch hosil qiling! \n ------------------------------------------------- ");
+      console.log("\n O'chirish uchun ENTER tugmasini bosing...");
+      console.log("\n --------------- \n dev: -offcodev- \n ---------------");
+    
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      rl.on("line", () => process.exit(0));
+    });
+  } catch (error) {
+    console.log('Xatolik yuz berdi:', error)
+  }
+}  
+
+startApp()
