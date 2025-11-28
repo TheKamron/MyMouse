@@ -7,12 +7,11 @@ const path = require("path");
 const fs = require("fs");
 const dotenv = require('dotenv')
 const User = require('./models/User.js')
-const mongoose = require('mongoose')
 dotenv.config();
 
 const isPkg = typeof process.pkg !== "undefined";
 
-// === Nut.js setup (works inside pkg) ===
+// === Nut.js setup ===
 function prepareNutBindings() {
   try {
     const osTmp = os.tmpdir();
@@ -66,11 +65,9 @@ if (isPkg) {
     ensureDir(path.dirname(dest));
     
     try {
-      // Use path relative to __dirname for snapshot access
       const snapshotPath = path.join(__dirname, asset.snapshotPath);
       const content = fs.readFileSync(snapshotPath);
       fs.writeFileSync(dest, content);
-      // console.log(`✅ Copied: ${asset.file}`);
     } catch (e) {
       console.warn(`⚠️ Failed to copy ${asset.file}: ${e.message}`);
       console.warn(`   Tried: ${asset.snapshotPath}`);
@@ -136,7 +133,6 @@ socket.on("altTabStart", async () => {
       await keyboard.pressKey(Key.LeftAlt);
       await keyboard.pressKey(Key.Tab);
       await keyboard.releaseKey(Key.Tab);
-      // console.log("✅ ALT pressed - Window switcher opened");
     } catch (e) {
       console.error("ALT+TAB Start error:", e);
     }
@@ -170,7 +166,7 @@ socket.on("altTabStart", async () => {
   socket.on("disconnect", () => console.log("❌ Telefon uzildi!"));
 });
 
-// Run Server
+// === Run Server ===
 const startApp = async () => { 
   try { 
     // server listen

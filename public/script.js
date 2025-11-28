@@ -42,7 +42,7 @@ async function initSocket() {
       }
     });
 
-    // === TOUCH MOVE ===
+    // === Touch Move ===
     touchpad.addEventListener("touchmove", (e) => {
       e.preventDefault();
       
@@ -53,7 +53,7 @@ async function initSocket() {
         socket.emit("move", { dx, dy });
         lastX = e.touches[0].clientX;
         lastY = e.touches[0].clientY;
-        
+      // === Touch Scroll ===
       } else if (mode === "scroll" && e.touches.length === 2) {
         // Two fingers - scroll
         const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
@@ -65,6 +65,7 @@ async function initSocket() {
           lastY = currentY;
           console.log("Scrolling:", scrollAmount);
         }
+        // === Alt Tab (Switch tabs) ===
       } else if (mode === "altTab" && e.touches.length === 3 && altTabActive) {
         // Three fingers - navigate through windows
         const currentX = (e.touches[0].clientX + e.touches[1].clientX + e.touches[2].clientX) / 3;
@@ -90,7 +91,7 @@ async function initSocket() {
       }
     }, { passive: false });
 
-    // === TOUCH END ===
+    // === Touch end ===
     touchpad.addEventListener("touchend", (e) => {
       if (tapTimeout && e.touches.length === 0) {
         socket.emit("click", "left");
