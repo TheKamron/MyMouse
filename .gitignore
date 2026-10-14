@@ -1,7 +1,16 @@
 /node_modules/
 /dist
 /mymouse.exe
+mymouse-icon.exe
 rcedit.exe
-/setIcon.js
 /icon.ico
+*.stackdump
 
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+secrets.json
+config.local.json

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <title>MyMouse</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <div>
+          <h1>MyMouse</h1>
+          <span class="ver" id="ver">v1.1.0</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <select class="lang-select" id="langSelect" aria-label="Language">
+          <option value="uz">O'zbekcha</option>
+          <option value="en">English</option>
+          <option value="ru">Русский</option>
+        </select>
+        <div class="server-pill" id="serverPill">
+          <span class="dot" id="dot"></span>
+          <span id="pillText">To'xtatilgan</span>
+        </div>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <section class="card qr-card">
+        <h2 class="card-title" data-i18n="title">Telefoningizni ulang</h2>
+        <p class="card-sub" data-i18n="sub">Chrome brauzerida QR kodni skanerlang yoki manzilni kiriting</p>
+
+        <div class="qr-wrap">
+          <div class="qr-box" id="qrBox">
+            <img id="qrImg" alt="QR" />
+          </div>
+        </div>
+
+        <div class="wifi-note hidden" id="wifiNote">
+          <span>⚠️</span> <span data-i18n="wifiNote">Wi-Fi tarmog'iga ulang</span>
+        </div>
+
+        <div class="url-list" id="urlList"></div>
+      </section>
+
+      <section class="card control-card">
+        <h2 class="card-title" data-i18n="control">Boshqaruv</h2>
+
+        <div class="field">
+          <label for="port" data-i18n="port">Port</label>
+          <div class="port-row">
+            <input id="port" type="number" value="3000" min="1" max="65535" />
+            <button class="btn primary" id="toggleBtn" data-i18n="start">Ishga tushirish</button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-num" id="clientCount">0</span>
+            <span class="stat-label" data-i18n="device">Qurilma</span>
+          </div>
+        </div>
+
+        <div class="feed" id="feed"></div>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="translations.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

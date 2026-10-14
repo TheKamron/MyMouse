@@ -1,126 +1,150 @@
-async function initSocket() {
-  try {
-    const res = await fetch("/__ip__");
-    const ip = (await res.text()).trim();
-    const origin = `http://${ip}:3000`;
+(() => {
+  const socket = io({ reconnectionDelayMax: 3000 });
 
-    console.log("[client] connecting to socket:", origin);
-    const socket = io(origin);
+  const touchpad = document.getElementById("touchpad");
+  const statusEl = document.getElementById("status");
 
-    const touchpad = document.getElementById("touchpad");
-    let mode = null;
-    let lastX = 0;
-    let lastY = 0;
-    let tapTimeout = null;
-    let threeFingerStartX = 0;
-    let altTabActive = false;
-    let lastSwipeTime = 0;
+  let mode = null;
+  let lastX = 0;
+  let lastY = 0;
+  let tapTimer = null;
+  let tapValid = false;
+  let travel = 0;
+  let threeFingerStartX = 0;
+  let altTabActive = false;
+  let lastSwipeTime = 0;
 
-    socket.on("connect", () => console.log("[client] connected", socket.id));
-    socket.on("disconnect", () => console.log("[client] disconnected"));
+  function setStatus(cls, text) {
+    statusEl.className = "status " + cls;
+    statusEl.textContent = text;
+  }
 
-    // === TOUCH START ===
-    touchpad.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) {
-        mode = "move";
-        lastX = e.touches[0].clientX;
-        lastY = e.touches[0].clientY;
-        tapTimeout = setTimeout(() => tapTimeout = null, 200);
-      } else if (e.touches.length === 2) {
-        mode = "scroll";
-        lastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        console.log("Scroll mode activated");
-      } else if (e.touches.length === 3) {
-        mode = "altTab";
-        threeFingerStartX = (e.touches[0].clientX + e.touches[1].clientX + e.touches[2].clientX) / 3;
-        altTabActive = true;
-        lastSwipeTime = Date.now();
-        
-        // Hold ALT (open window switcher)
-        socket.emit("altTabStart");
-        console.log("ALT+TAB: Window switcher opened");
-      }
-    });
+  setStatus("warn", "⏳ Connecting...");
+  socket.on("connect", () => setStatus("ok", "● Connected"));
+  socket.on("disconnect", () => setStatus("err", "○ Disconnected — reconnecting..."));
 
-    // === Touch Move ===
-    touchpad.addEventListener("touchmove", (e) => {
+  let accX = 0;
+  let accY = 0;
+  let framePending = false;
+
+  function flushMove() {
+    socket.emit("move", { dx: accX, dy: accY });
+    accX = accY = 0;
+    framePending = false;
+  }
+
+  function queueMove(dx, dy) {
+    accX += dx;
+    accY += dy;
+    if (!framePending) {
+      framePending = true;
+      requestAnimationFrame(flushMove);
+    }
+  }
+
+  function cancelTap() {
+    clearTimeout(tapTimer);
+    tapTimer = null;
+    tapValid = false;
+  }
+
+  const avgY = (touches) =>
+    Array.from(touches).reduce((s, t) => s + t.clientY, 0) / touches.length;
+
+  const avgX = (touches) =>
+    Array.from(touches).reduce((s, t) => s + t.clientX, 0) / touches.length;
+
+  touchpad.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 1) {
+      mode = "move";
+      travel = 0;
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+      cancelTap();
+      tapValid = true;
+      tapTimer = setTimeout(cancelTap, 250);
+    } else if (e.touches.length === 2) {
+      cancelTap();
+      mode = "scroll";
+      lastY = avgY(e.touches);
+    } else if (e.touches.length === 3) {
+      cancelTap();
+      mode = "altTab";
+      threeFingerStartX = avgX(e.touches);
+      altTabActive = true;
+      lastSwipeTime = Date.now();
+      socket.emit("altTabStart");
+    }
+  });
+
+  touchpad.addEventListener(
+    "touchmove",
+    (e) => {
       e.preventDefault();
-      
+
       if (mode === "move" && e.touches.length === 1) {
-        // Single finger - move cursor
         const dx = e.touches[0].clientX - lastX;
         const dy = e.touches[0].clientY - lastY;
-        socket.emit("move", { dx, dy });
+        travel += Math.abs(dx) + Math.abs(dy);
+        if (travel > 15) cancelTap();
+        queueMove(dx, dy);
         lastX = e.touches[0].clientX;
         lastY = e.touches[0].clientY;
-      // === Touch Scroll ===
       } else if (mode === "scroll" && e.touches.length === 2) {
-        // Two fingers - scroll
-        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const currentY = avgY(e.touches);
         const dy = lastY - currentY;
-        
         if (Math.abs(dy) > 2) {
-          const scrollAmount = Math.round(dy * 5);
-          socket.emit("scroll", { dy: scrollAmount });
+          socket.emit("scroll", { dy: Math.round(dy * 5) });
           lastY = currentY;
-          console.log("Scrolling:", scrollAmount);
         }
-        // === Alt Tab (Switch tabs) ===
       } else if (mode === "altTab" && e.touches.length === 3 && altTabActive) {
-        // Three fingers - navigate through windows
-        const currentX = (e.touches[0].clientX + e.touches[1].clientX + e.touches[2].clientX) / 3;
+        const currentX = avgX(e.touches);
         const dx = currentX - threeFingerStartX;
         const now = Date.now();
-        
-        // Debounce: only allow one swipe every 300ms to prevent too many rapid switches
+
         if (now - lastSwipeTime > 300) {
           if (dx > 50) {
-            // Swipe left = next window (press TAB)
             socket.emit("altTabNavigate", { direction: "next" });
             threeFingerStartX = currentX;
             lastSwipeTime = now;
-            console.log("ALT+TAB: Next window");
           } else if (dx < -50) {
-            // Swipe right = previous window (press SHIFT+TAB)
             socket.emit("altTabNavigate", { direction: "prev" });
             threeFingerStartX = currentX;
             lastSwipeTime = now;
-            console.log("ALT+TAB: Previous window");
           }
         }
       }
-    }, { passive: false });
+    },
+    { passive: false }
+  );
 
-    // === Touch end ===
-    touchpad.addEventListener("touchend", (e) => {
-      if (tapTimeout && e.touches.length === 0) {
-        socket.emit("click", "left");
-      }
-      tapTimeout = null;
-      
-      // If ALT+TAB was active and all fingers lifted, release ALT
-      if (altTabActive && e.touches.length === 0) {
-        socket.emit("altTabEnd");
-        altTabActive = false;
-        mode = null;
-        console.log("ALT+TAB: Window selected");
-        return;
-      }
-      
-      if (e.touches.length === 0) {
-        mode = null;
-        console.log("Touch ended, mode reset");
-      }
-    });
+  touchpad.addEventListener("touchend", (e) => {
+    if (altTabActive && e.touches.length === 0) {
+      altTabActive = false;
+      cancelTap();
+      socket.emit("altTabEnd");
+      mode = null;
+      return;
+    }
 
-    // Button clicks
-    document.getElementById("left").addEventListener("click", () => socket.emit("click", "left"));
-    document.getElementById("right").addEventListener("click", () => socket.emit("click", "right"));
-    
-  } catch (err) {
-    console.error("Failed to init socket:", err);
-    alert("Server bilan ulanishda xatolik. Iltimos firewall va Wi-Fi'ni tekshiring.\n\nError: " + (err && err.message));
-  }
-}
+    if (tapValid && e.touches.length === 0) {
+      socket.emit("click", "left");
+    }
+    cancelTap();
 
-initSocket();
+    if (e.touches.length === 1 && mode !== "move") {
+      mode = "move";
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    } else if (e.touches.length === 2 && mode === "scroll") {
+      lastY = avgY(e.touches);
+    } else if (e.touches.length === 0) {
+      mode = null;
+    }
+  });
+
+  document.getElementById("left").addEventListener("click", () => socket.emit("click", "left"));
+  document.getElementById("right").addEventListener("click", () => socket.emit("click", "right"));
+
+  document.addEventListener("contextmenu", (e) => e.preventDefault());
+})();

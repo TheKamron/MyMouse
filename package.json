@@ -1,41 +1,48 @@
 {
   "name": "mymouse",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "1.1.0",
+  "description": "Use your phone as a touchpad for your PC",
+  "main": "main.js",
   "scripts": {
-    "start": "nodemon index.js",
-    "build": "pkg . --targets node18-win-x64 --output mymouse.exe"
+    "start": "electron .",
+    "dev": "electron .",
+    "dist": "electron-builder"
   },
-  "pkg": {
-    "assets": [
-      "index.html",
-      "public/**/*",
-      "node_modules/socket.io/client-dist/socket.io.js",
-      "node_modules/@nut-tree/libnut-win32/build/Release/libnut.node"
-    ],
-    "icon": "icon.ico"
-  },
-  "bin": "index.js",
-  "author": "offcodev",
+  "author": "bykamronbek",
   "license": "ISC",
   "dependencies": {
-    "@capacitor/android": "^7.4.4",
-    "@capacitor/cli": "^7.4.4",
-    "@capacitor/core": "^7.4.4",
     "@nut-tree/nut-js": "^3.1.2",
-    "dotenv": "^16.4.5",
     "express": "^5.1.0",
-    "express-handlebars": "^8.0.3",
-    "mongoose": "^8.19.3",
-    "nodemon": "^3.1.10",
-    "pkg": "^5.8.1",
-    "robotjs": "^0.6.0",
-    "socket.io": "^4.8.1",
-    "ws": "^8.18.3"
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "rcedit": "^4.0.1",
-    "resedit": "^3.0.1"
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.bykamronbek.mymouse",
+    "productName": "MyMouse",
+    "files": [
+      "main.js",
+      "index.html",
+      "public/**/*",
+      "gui/**/*",
+      "icon.ico",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/@nut-tree/libnut-win32/build/Release/libnut.node",
+        "to": "native/libnut.node"
+      }
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "icon.ico"
+    },
+    "directories": {
+      "output": "dist"
+    }
   }
 }
